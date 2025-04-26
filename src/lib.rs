@@ -1,8 +1,13 @@
-use core::str;
-use std::ffi::{OsStr, OsString};
+use std::{
+    ffi::{OsStr, OsString},
+    str,
+};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
 
 pub struct Lexer {
     argv: Vec<OsString>,
@@ -17,8 +22,7 @@ pub enum Flag<'a> {
     //     -a val
     //     -a=val
     //     -aval
-    //     -abcval
-    //     -abc=val
+    //     -abc
     //     -a val1 val2 val3.. --
     Short(char),
     // Cases:
