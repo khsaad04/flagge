@@ -66,28 +66,30 @@ impl Lexer {
         if current_arg.starts_with(b"--") {
             let stripped_arg = &current_arg[2..];
             if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=') {
-                self.offset = pos + 1;
-                match str::from_utf8(&stripped_arg[..pos]) {
-                    Ok(val) => Some(Flag::Long(val)),
-                    Err(_) => {
-                        eprintln!(
-                            "Invalid unicode character in \"{}\"",
-                            String::from_utf8_lossy(current_arg)
-                        );
-                        std::process::exit(1);
+                if pos != 0 {
+                    self.offset = pos + 1;
+                    self.cursor += 1;
+                    match str::from_utf8(&stripped_arg[..pos]) {
+                        Ok(val) => return Some(Flag::Long(val)),
+                        Err(_) => {
+                            eprintln!(
+                                "Invalid unicode character in \"{}\"",
+                                String::from_utf8_lossy(current_arg)
+                            );
+                            std::process::exit(1);
+                        }
                     }
                 }
-            } else {
-                self.cursor += 1;
-                match str::from_utf8(stripped_arg) {
-                    Ok(val) => Some(Flag::Long(val)),
-                    Err(_) => {
-                        eprintln!(
-                            "Invalid unicode character in \"{}\"",
-                            String::from_utf8_lossy(current_arg)
-                        );
-                        std::process::exit(1);
-                    }
+            }
+            self.cursor += 1;
+            match str::from_utf8(stripped_arg) {
+                Ok(val) => Some(Flag::Long(val)),
+                Err(_) => {
+                    eprintln!(
+                        "Invalid unicode character in \"{}\"",
+                        String::from_utf8_lossy(current_arg)
+                    );
+                    std::process::exit(1);
                 }
             }
         } else if current_arg.starts_with(b"-") {
