@@ -1,7 +1,4 @@
-use std::{
-    ffi::{OsStr, OsString},
-    str,
-};
+use std::ffi::{OsStr, OsString};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -9,6 +6,7 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
+#[derive(Debug)]
 pub struct Lexer {
     argv: Vec<OsString>,
     cursor: usize,
@@ -16,25 +14,38 @@ pub struct Lexer {
 }
 
 #[derive(Debug)]
-pub enum Flag<'a> {
-    // Cases:
-    //     -a
-    //     -a val
-    //     -a=val
-    //     -aval
-    //     -abc
-    //     -a val1 val2 val3.. --
-    Short(char),
-    // Cases:
-    //     --key
-    //     --key value
-    //     --key=value
-    //     --key value1 value2 value3.. --
-    Long(&'a str),
+pub enum Token<'a> {
+    ShortFlag(char),
+    LongFlag(&'a str),
+    Value(OsString),
 }
 
-// TODO: Impl `Command` struct that uses builder pattern
-// TODO: Impl custom `Error` type
+// TODO: Impl `Command` parser with builder pattern
+
+#[derive(Debug)]
+pub struct Error {
+    ctx: String,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ctx)
+    }
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self { ctx: value }
+    }
+}
+
+impl From<std::str::Utf8Error> for Error {
+    fn from(value: std::str::Utf8Error) -> Self {
+        Self {
+            ctx: value.to_string(),
+        }
+    }
+}
 
 impl Lexer {
     pub fn from(argv: impl Iterator<Item = OsString>) -> Self {
@@ -57,9 +68,9 @@ impl Lexer {
         }
     }
 
-    pub fn get_flag(&mut self) -> Option<Flag> {
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if self.cursor >= self.argv.len() {
-            return None;
+            return Ok(None);
         }
 
         let current_arg = self.argv[self.cursor].as_bytes();
@@ -69,28 +80,16 @@ impl Lexer {
                 if pos != 0 {
                     self.offset = pos + 1;
                     self.cursor += 1;
-                    match str::from_utf8(&stripped_arg[..pos]) {
-                        Ok(val) => return Some(Flag::Long(val)),
-                        Err(_) => {
-                            eprintln!(
-                                "Invalid unicode character in \"{}\"",
-                                String::from_utf8_lossy(current_arg)
-                            );
-                            std::process::exit(1);
-                        }
+                    match std::str::from_utf8(&stripped_arg[..pos]) {
+                        Ok(val) => return Ok(Some(Token::LongFlag(val))),
+                        Err(err) => return Err(err.into()),
                     }
                 }
             }
             self.cursor += 1;
-            match str::from_utf8(stripped_arg) {
-                Ok(val) => Some(Flag::Long(val)),
-                Err(_) => {
-                    eprintln!(
-                        "Invalid unicode character in \"{}\"",
-                        String::from_utf8_lossy(current_arg)
-                    );
-                    std::process::exit(1);
-                }
+            match std::str::from_utf8(stripped_arg) {
+                Ok(val) => Ok(Some(Token::LongFlag(val))),
+                Err(err) => Err(err.into()),
             }
         } else if current_arg.starts_with(b"-") {
             let stripped_arg = &current_arg[1..];
@@ -109,17 +108,19 @@ impl Lexer {
                 self.offset = 0;
             }
 
-            if stripped_arg_utf8.chars().nth(offset)? == '�' {
-                eprintln!(
-                    "Invalid unicode character in \"{}\"",
+            if stripped_arg_utf8.chars().nth(offset).unwrap() == '�' {
+                Err(format!(
+                    "Invalid unicode character in {}",
                     String::from_utf8_lossy(current_arg)
-                );
-                std::process::exit(1);
+                )
+                .into())
             } else {
-                Some(Flag::Short(stripped_arg_utf8.chars().nth(offset)?))
+                Ok(Some(Token::ShortFlag(
+                    stripped_arg_utf8.chars().nth(offset).unwrap(),
+                )))
             }
         } else {
-            None
+            Ok(Some(Token::Value(OsStr::from_bytes(current_arg).into())))
         }
     }
 
