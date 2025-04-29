@@ -9,8 +9,8 @@ use std::os::windows::ffi::OsStrExt;
 #[derive(Debug)]
 pub struct Lexer {
     argv: Vec<OsString>,
+    index: usize,
     cursor: usize,
-    offset: usize,
 }
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub enum Token<'a> {
     Value(OsString),
 }
 
-// TODO: Impl `Command` parser with builder pattern
+// TODO: Implement a Command parser with builder pattern
 
 #[derive(Debug)]
 pub struct Error {
@@ -39,20 +39,12 @@ impl From<String> for Error {
     }
 }
 
-impl From<std::str::Utf8Error> for Error {
-    fn from(value: std::str::Utf8Error) -> Self {
-        Self {
-            ctx: value.to_string(),
-        }
-    }
-}
-
 impl Lexer {
     pub fn from(argv: impl Iterator<Item = OsString>) -> Self {
         Self {
             argv: argv.collect::<Vec<OsString>>(),
-            cursor: 1,
-            offset: 0,
+            index: 1,
+            cursor: 0,
         }
     }
 
@@ -61,51 +53,70 @@ impl Lexer {
     }
 
     pub fn starts_with_program_name(&mut self, b: bool) {
-        if b && self.cursor == 0 && self.offset == 0 {
-            self.cursor = 1;
-        } else if !b && self.cursor == 1 && self.offset == 0 {
-            self.cursor = 0;
+        if b && self.index == 0 && self.cursor == 0 {
+            self.index = 1;
+        } else if !b && self.index == 1 && self.cursor == 0 {
+            self.index = 0;
         }
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
-        if self.cursor >= self.argv.len() {
+        if self.index >= self.argv.len() {
             return Ok(None);
         }
 
-        let current_arg = self.argv[self.cursor].as_bytes();
+        let current_arg = self.argv[self.index].as_bytes();
         if current_arg.starts_with(b"--") {
             let stripped_arg = &current_arg[2..];
+            if stripped_arg.is_empty() {
+                return Ok(None);
+            }
             if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=') {
                 if pos != 0 {
-                    self.offset = pos + 1;
-                    self.cursor += 1;
+                    self.cursor = pos + 1;
+                    self.index += 1;
                     match std::str::from_utf8(&stripped_arg[..pos]) {
                         Ok(val) => return Ok(Some(Token::LongFlag(val))),
-                        Err(err) => return Err(err.into()),
+                        Err(err) => {
+                            return Err(format!(
+                                "Invalid unicode character(s) in argument {}: {err}",
+                                String::from_utf8_lossy(current_arg)
+                            )
+                            .into());
+                        }
                     }
                 }
             }
-            self.cursor += 1;
+
             match std::str::from_utf8(stripped_arg) {
-                Ok(val) => Ok(Some(Token::LongFlag(val))),
-                Err(err) => Err(err.into()),
+                Ok(val) => {
+                    self.index += 1;
+                    Ok(Some(Token::LongFlag(val)))
+                }
+                Err(err) => Err(format!(
+                    "Invalid unicode character(s) in argument {}: {err}",
+                    String::from_utf8_lossy(current_arg)
+                )
+                .into()),
             }
         } else if current_arg.starts_with(b"-") {
             let stripped_arg = &current_arg[1..];
+            if stripped_arg.is_empty() {
+                return Ok(None);
+            }
             let stripped_arg_utf8 = OsStr::from_bytes(stripped_arg).to_string_lossy();
 
-            let offset = self.offset;
+            let offset = self.cursor;
             if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=') {
-                if pos == self.offset + 1 {
-                    self.offset += 1;
+                if pos == self.cursor + 1 {
+                    self.cursor += 1;
                 }
             }
-            if stripped_arg_utf8.chars().count() > self.offset + 1 {
-                self.offset += 1;
-            } else {
+            if stripped_arg_utf8.chars().count() > self.cursor + 1 {
                 self.cursor += 1;
-                self.offset = 0;
+            } else {
+                self.index += 1;
+                self.cursor = 0;
             }
 
             if stripped_arg_utf8.chars().nth(offset).unwrap() == '�' {
@@ -125,28 +136,31 @@ impl Lexer {
     }
 
     pub fn get_value(&mut self) -> Option<OsString> {
-        if self.cursor >= self.argv.len() {
+        if self.index >= self.argv.len() {
             return None;
         }
 
-        let current_arg = self.argv[self.cursor].as_bytes();
+        let current_arg = self.argv[self.index].as_bytes();
         if !current_arg.starts_with(b"-") {
-            self.cursor += 1;
+            self.index += 1;
             Some(OsStr::from_bytes(current_arg).into())
-        } else if current_arg.starts_with(b"--") && self.offset > 0 {
+        } else if current_arg.starts_with(b"--") && self.cursor > 0 {
             let stripped_arg = &current_arg[2..];
             if stripped_arg.is_empty() {
                 return None;
             }
-            let offset = self.offset;
-            self.cursor += 1;
-            self.offset = 0;
+            let offset = self.cursor;
+            self.index += 1;
+            self.cursor = 0;
             Some(OsStr::from_bytes(&stripped_arg[offset..]).into())
-        } else if current_arg.starts_with(b"-") && self.offset > 0 {
+        } else if current_arg.starts_with(b"-") && self.cursor > 0 {
             let stripped_arg = &current_arg[1..];
-            let offset = self.offset;
-            self.cursor += 1;
-            self.offset = 0;
+            if stripped_arg.is_empty() {
+                return None;
+            }
+            let offset = self.cursor;
+            self.index += 1;
+            self.cursor = 0;
             Some(OsStr::from_bytes(&stripped_arg[offset..]).into())
         } else {
             None
@@ -154,8 +168,8 @@ impl Lexer {
     }
 
     pub fn finished(&self) -> bool {
-        self.cursor >= self.argv.len()
+        self.index >= self.argv.len()
     }
 }
 
-// TODO: Write unit tests
+// TODO: Write tests
