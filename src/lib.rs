@@ -131,6 +131,7 @@ impl Lexer {
                 )))
             }
         } else {
+            self.index += 1;
             Ok(Some(Token::Value(OsStr::from_bytes(current_arg).into())))
         }
     }
