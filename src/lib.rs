@@ -6,6 +6,9 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
 
+#[cfg(target_os = "wasi")]
+use std::os::windows::ffi::OsStrExt;
+
 #[derive(Debug)]
 pub struct Lexer {
     argv: Vec<OsString>,
