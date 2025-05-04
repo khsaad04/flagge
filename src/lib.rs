@@ -80,7 +80,7 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
-        if self.index >= self.argv.len() {
+        if self.finished() {
             return Ok(None);
         }
 
@@ -156,7 +156,7 @@ impl Lexer {
     }
 
     pub fn get_value(&mut self) -> Option<OsString> {
-        if self.index >= self.argv.len() {
+        if self.finished() {
             return None;
         }
 
