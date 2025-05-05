@@ -23,39 +23,11 @@ pub enum Token<'a> {
     Value(OsString),
 }
 
-impl std::fmt::Display for Token<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Token::ShortFlag(s) => {
-                write!(f, "-{}", *s)
-            }
-            Token::LongFlag(s) => {
-                write!(f, "--{}", *s)
-            }
-            Token::Value(s) => {
-                write!(f, "{}", String::from_utf8_lossy(s.as_os_str().as_bytes()))
-            }
-        }
-    }
-}
-
 // TODO: Implement a Command parser with builder pattern
 
 #[derive(Debug)]
 pub struct Error {
     ctx: String,
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.ctx)
-    }
-}
-
-impl From<String> for Error {
-    fn from(value: String) -> Self {
-        Self { ctx: value }
-    }
 }
 
 impl Lexer {
@@ -189,6 +161,34 @@ impl Lexer {
 
     pub fn finished(&self) -> bool {
         self.index >= self.argv.len()
+    }
+}
+
+impl std::fmt::Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::ShortFlag(s) => {
+                write!(f, "-{}", *s)
+            }
+            Token::LongFlag(s) => {
+                write!(f, "--{}", *s)
+            }
+            Token::Value(s) => {
+                write!(f, "{}", String::from_utf8_lossy(s.as_os_str().as_bytes()))
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.ctx)
+    }
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self { ctx: value }
     }
 }
 
