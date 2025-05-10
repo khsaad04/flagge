@@ -1,13 +1,17 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 
 #[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
+use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+#[cfg(windows)]
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
 #[derive(Debug)]
 pub struct Lexer {
     argv: Vec<OsString>,
     index: usize,
     cursor: usize,
+    long_flag: String,
 }
 
 #[derive(Debug)]
@@ -30,6 +34,7 @@ impl Lexer {
             argv: argv.collect::<Vec<OsString>>(),
             index: 1,
             cursor: 0,
+            long_flag: String::new(),
         }
     }
 
@@ -45,6 +50,7 @@ impl Lexer {
         }
     }
 
+    #[cfg(not(windows))]
     pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
         if self.finished() {
             return Ok(None);
@@ -60,8 +66,11 @@ impl Lexer {
                 if pos != 0 {
                     self.cursor = pos + 1;
                     self.index += 1;
-                    match std::str::from_utf8(&stripped_arg[..pos]) {
-                        Ok(val) => return Ok(Some(Token::LongFlag(val))),
+                    match String::from_utf8(stripped_arg[..pos].into()) {
+                        Ok(val) => {
+                            self.long_flag = val;
+                            return Ok(Some(Token::LongFlag(self.long_flag.as_str())));
+                        }
                         Err(err) => {
                             return Err(format!(
                                 "Invalid unicode character(s) in argument {}: {err}",
@@ -73,10 +82,10 @@ impl Lexer {
                 }
             }
 
-            match std::str::from_utf8(stripped_arg) {
+            match String::from_utf8(stripped_arg.into()) {
                 Ok(val) => {
-                    self.index += 1;
-                    Ok(Some(Token::LongFlag(val)))
+                    self.long_flag = val;
+                    Ok(Some(Token::LongFlag(self.long_flag.as_str())))
                 }
                 Err(err) => Err(format!(
                     "Invalid unicode character(s) in argument {}: {err}",
@@ -121,6 +130,89 @@ impl Lexer {
         }
     }
 
+    #[cfg(windows)]
+    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
+        if self.finished() {
+            return Ok(None);
+        }
+
+        let current_arg: Vec<_> = self.argv[self.index].encode_wide().collect();
+        const WIDE_DASH: u16 = b'-' as u16;
+        if current_arg.starts_with(&[WIDE_DASH, WIDE_DASH]) {
+            let stripped_arg = &current_arg[2..];
+            if stripped_arg.is_empty() {
+                return Ok(None);
+            }
+            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=' as u16) {
+                if pos != 0 {
+                    self.cursor = pos + 1;
+                    self.index += 1;
+                    match String::from_utf16(&stripped_arg[..pos]) {
+                        Ok(val) => {
+                            self.long_flag = val;
+                            return Ok(Some(Token::LongFlag(self.long_flag.as_str())));
+                        }
+                        Err(err) => {
+                            return Err(format!(
+                                "Invalid unicode character(s) in argument {}: {err}",
+                                String::from_utf16_lossy(&current_arg[..])
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+
+            match String::from_utf16(stripped_arg) {
+                Ok(val) => {
+                    self.long_flag = val;
+                    Ok(Some(Token::LongFlag(self.long_flag.as_str())))
+                }
+                Err(err) => Err(format!(
+                    "Invalid unicode character(s) in argument {}: {err}",
+                    String::from_utf16_lossy(&current_arg)
+                )
+                .into()),
+            }
+        } else if current_arg.starts_with(&[WIDE_DASH]) {
+            let stripped_arg = &current_arg[1..];
+            if stripped_arg.is_empty() {
+                return Ok(None);
+            }
+            let stripped_arg_utf8 = OsString::from_wide(stripped_arg);
+            let stripped_arg_utf8 = stripped_arg_utf8.to_string_lossy();
+
+            let offset = self.cursor;
+            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=' as u16) {
+                if pos == self.cursor + 1 {
+                    self.cursor += 1;
+                }
+            }
+            if stripped_arg_utf8.chars().count() > self.cursor + 1 {
+                self.cursor += 1;
+            } else {
+                self.index += 1;
+                self.cursor = 0;
+            }
+
+            if stripped_arg_utf8.chars().nth(offset).unwrap() == '�' {
+                Err(format!(
+                    "Invalid unicode character in {}",
+                    String::from_utf16_lossy(&current_arg)
+                )
+                .into())
+            } else {
+                Ok(Some(Token::ShortFlag(
+                    stripped_arg_utf8.chars().nth(offset).unwrap(),
+                )))
+            }
+        } else {
+            self.index += 1;
+            Ok(Some(Token::Value(OsString::from_wide(&current_arg))))
+        }
+    }
+
+    #[cfg(not(windows))]
     pub fn get_value(&mut self) -> Option<OsString> {
         if self.finished() {
             return None;
@@ -153,6 +245,40 @@ impl Lexer {
         }
     }
 
+    #[cfg(windows)]
+    pub fn get_value(&mut self) -> Option<OsString> {
+        if self.finished() {
+            return None;
+        }
+
+        let current_arg: Vec<_> = self.argv[self.index].encode_wide().collect();
+        const WIDE_DASH: u16 = b'-' as u16;
+        if !current_arg.starts_with(&[WIDE_DASH]) {
+            self.index += 1;
+            Some(OsString::from_wide(&current_arg))
+        } else if current_arg.starts_with(&[WIDE_DASH, WIDE_DASH]) && self.cursor > 0 {
+            let stripped_arg = &current_arg[2..];
+            if stripped_arg.is_empty() {
+                return None;
+            }
+            let offset = self.cursor;
+            self.index += 1;
+            self.cursor = 0;
+            Some(OsString::from_wide(&stripped_arg[offset..]))
+        } else if current_arg.starts_with(&[WIDE_DASH]) && self.cursor > 0 {
+            let stripped_arg = &current_arg[1..];
+            if stripped_arg.is_empty() {
+                return None;
+            }
+            let offset = self.cursor;
+            self.index += 1;
+            self.cursor = 0;
+            Some(OsString::from_wide(&stripped_arg[offset..]))
+        } else {
+            None
+        }
+    }
+
     pub fn finished(&self) -> bool {
         self.index >= self.argv.len()
     }
@@ -168,7 +294,7 @@ impl std::fmt::Display for Token<'_> {
                 write!(f, "--{}", *s)
             }
             Token::Value(s) => {
-                write!(f, "{}", String::from_utf8_lossy(s.as_os_str().as_bytes()))
+                write!(f, "{:?}", s)
             }
         }
     }
