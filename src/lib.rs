@@ -3,6 +3,9 @@ use std::ffi::OsString;
 #[cfg(unix)]
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
 
+#[cfg(all(target_os = "wasi", target_env = "p1"))]
+use std::{ffi::OsStr, os::wasi::ffi::OsStrExt};
+
 #[cfg(windows)]
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
