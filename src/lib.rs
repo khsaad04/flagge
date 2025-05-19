@@ -45,12 +45,13 @@ impl Lexer {
         Self::from(std::env::args_os())
     }
 
-    pub fn starts_with_program_name(&mut self, b: bool) {
+    pub fn starts_with_program_name(mut self, b: bool) -> Self {
         if b && self.index == 0 && self.cursor == 0 {
             self.index = 1;
         } else if !b && self.index == 1 && self.cursor == 0 {
             self.index = 0;
         }
+        self
     }
 
     #[cfg(not(windows))]
