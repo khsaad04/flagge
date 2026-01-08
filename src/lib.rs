@@ -284,7 +284,7 @@ impl Lexer {
     }
 
     pub fn finished(&self) -> bool {
-        self.index >= self.argv.len()
+        self.index >= (self.argv.len() - 1)
     }
 }
 
