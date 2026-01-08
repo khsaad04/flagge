@@ -89,6 +89,7 @@ impl Lexer {
             match String::from_utf8(stripped_arg.into()) {
                 Ok(val) => {
                     self.long_flag = val;
+                    self.index += 1;
                     Ok(Some(Token::LongFlag(self.long_flag.as_str())))
                 }
                 Err(err) => Err(format!(
@@ -170,6 +171,7 @@ impl Lexer {
             match String::from_utf16(stripped_arg) {
                 Ok(val) => {
                     self.long_flag = val;
+                    self.index += 1;
                     Ok(Some(Token::LongFlag(self.long_flag.as_str())))
                 }
                 Err(err) => Err(format!(
@@ -284,7 +286,7 @@ impl Lexer {
     }
 
     pub fn finished(&self) -> bool {
-        self.index >= (self.argv.len() - 1)
+        self.index >= self.argv.len()
     }
 }
 
