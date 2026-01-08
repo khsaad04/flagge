@@ -55,7 +55,7 @@ impl Lexer {
     }
 
     #[cfg(not(windows))]
-    pub fn next_token(&mut self) -> Result<Option<Token>, Error> {
+    pub fn next_token(&mut self) -> Result<Option<Token<'_>>, Error> {
         if self.finished() {
             return Ok(None);
         }
@@ -66,22 +66,22 @@ impl Lexer {
             if stripped_arg.is_empty() {
                 return Ok(None);
             }
-            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=') {
-                if pos != 0 {
-                    self.cursor = pos + 1;
-                    self.index += 1;
-                    match String::from_utf8(stripped_arg[..pos].into()) {
-                        Ok(val) => {
-                            self.long_flag = val;
-                            return Ok(Some(Token::LongFlag(self.long_flag.as_str())));
-                        }
-                        Err(err) => {
-                            return Err(format!(
-                                "Invalid unicode character(s) in argument {}: {err}",
-                                String::from_utf8_lossy(current_arg)
-                            )
-                            .into());
-                        }
+            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=')
+                && pos != 0
+            {
+                self.cursor = pos + 1;
+                self.index += 1;
+                match String::from_utf8(stripped_arg[..pos].into()) {
+                    Ok(val) => {
+                        self.long_flag = val;
+                        return Ok(Some(Token::LongFlag(self.long_flag.as_str())));
+                    }
+                    Err(err) => {
+                        return Err(format!(
+                            "Invalid unicode character(s) in argument {}: {err}",
+                            String::from_utf8_lossy(current_arg)
+                        )
+                        .into());
                     }
                 }
             }
@@ -105,10 +105,10 @@ impl Lexer {
             let stripped_arg_utf8 = OsStr::from_bytes(stripped_arg).to_string_lossy();
 
             let offset = self.cursor;
-            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=') {
-                if pos == self.cursor + 1 {
-                    self.cursor += 1;
-                }
+            if let Some(pos) = stripped_arg.iter().position(|x| *x == b'=')
+                && pos == self.cursor + 1
+            {
+                self.cursor += 1;
             }
             if stripped_arg_utf8.chars().count() > self.cursor + 1 {
                 self.cursor += 1;
