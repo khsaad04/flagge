@@ -112,7 +112,8 @@ impl Lexer {
                 )))
             }
         } else {
-            Ok(None)
+            self.index += 1;
+            Ok(Some(Token::Value(OsStr::from_bytes(arg).into())))
         }
     }
 
@@ -183,7 +184,8 @@ impl Lexer {
                 )))
             }
         } else {
-            Ok(None)
+            self.index += 1;
+            Ok(Some(Token::Value(OsStr::from_bytes(arg).into())))
         }
     }
 
