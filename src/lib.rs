@@ -25,24 +25,22 @@ pub enum Token<'a> {
 }
 
 impl Lexer {
-    pub fn from(argv: impl Iterator<Item = OsString>) -> Self {
+    pub fn new(args: impl Iterator<Item = OsString>) -> Self {
         Self {
-            argv: argv.collect::<Vec<OsString>>(),
+            argv: args.collect::<Vec<OsString>>(),
             index: 1,
             cursor: 0,
             long_flag: String::new(),
         }
     }
 
-    pub fn from_env() -> Self {
-        Self::from(std::env::args_os())
-    }
-
     pub fn starts_with_program_name(mut self, b: bool) -> Self {
-        if b && self.index == 0 && self.cursor == 0 {
-            self.index = 1;
-        } else if !b && self.index == 1 && self.cursor == 0 {
-            self.index = 0;
+        if self.index <= 1 && self.cursor == 0 {
+            if b {
+                self.index = 1;
+            } else {
+                self.index = 0;
+            }
         }
         self
     }
@@ -60,17 +58,21 @@ impl Lexer {
                 return Ok(None);
             }
 
+            let mut has_value = false;
             if let Some(pos) = arg.iter().position(|x| *x == b'=')
                 && pos != 0
             {
                 self.cursor = pos + 1;
                 arg = &arg[..pos];
+                has_value = true;
             }
 
             match String::from_utf8(arg.into()) {
                 Ok(val) => {
                     self.long_flag = val;
-                    self.index += 1;
+                    if !has_value {
+                        self.index += 1;
+                    }
                     Ok(Some(Token::LongFlag(self.long_flag.as_str())))
                 }
                 Err(err) => Err(format!(
@@ -87,20 +89,25 @@ impl Lexer {
 
             let arg_utf8 = OsStr::from_bytes(arg).to_string_lossy();
 
+            let offset = self.cursor;
+            let mut has_value = false;
             if let Some(pos) = arg.iter().position(|x| *x == b'=')
                 && pos == self.cursor + 1
             {
-                self.cursor += 1;
+                self.cursor = pos + 1;
+                has_value = true;
             }
 
-            if arg_utf8.chars().count() > self.cursor + 1 {
-                self.cursor += 1;
-            } else {
-                self.index += 1;
-                self.cursor = 0;
+            if !has_value {
+                if arg_utf8.chars().count() > self.cursor + 1 {
+                    self.cursor += 1;
+                } else {
+                    self.index += 1;
+                    self.cursor = 0;
+                }
             }
 
-            if arg_utf8.chars().nth(self.cursor).unwrap() == '�' {
+            if arg_utf8.chars().nth(offset).unwrap() == '�' {
                 Err(format!(
                     "Invalid unicode character in {}",
                     String::from_utf8_lossy(arg)
@@ -108,7 +115,7 @@ impl Lexer {
                 .into())
             } else {
                 Ok(Some(Token::ShortFlag(
-                    arg_utf8.chars().nth(self.cursor).unwrap(),
+                    arg_utf8.chars().nth(offset).unwrap(),
                 )))
             }
         } else {
@@ -131,17 +138,21 @@ impl Lexer {
                 return Ok(None);
             }
 
+            let mut has_value = false;
             if let Some(pos) = arg.iter().position(|x| *x == b'=' as u16)
                 && pos != 0
             {
                 self.cursor = pos + 1;
                 arg = arg[..pos].to_vec();
+                has_value = true;
             }
 
             match String::from_utf16(&arg) {
                 Ok(val) => {
                     self.long_flag = val;
-                    self.index += 1;
+                    if !has_value {
+                        self.index += 1;
+                    }
                     Ok(Some(Token::LongFlag(self.long_flag.as_str())))
                 }
                 Err(err) => Err(format!(
@@ -159,20 +170,25 @@ impl Lexer {
             let arg_utf8 = OsString::from_wide(&arg);
             let arg_utf8 = arg_utf8.to_string_lossy();
 
+            let offset = self.cursor;
+            let mut has_value = false;
             if let Some(pos) = arg.iter().position(|x| *x == WIDE_DASH)
                 && pos == self.cursor + 1
             {
-                self.cursor += 1;
+                self.cursor = pos + 1;
+                has_value = true;
             }
 
-            if arg_utf8.chars().count() > self.cursor + 1 {
-                self.cursor += 1;
-            } else {
-                self.index += 1;
-                self.cursor = 0;
+            if !has_value {
+                if arg_utf8.chars().count() > self.cursor + 1 {
+                    self.cursor += 1;
+                } else {
+                    self.index += 1;
+                    self.cursor = 0;
+                }
             }
 
-            if arg_utf8.chars().nth(self.cursor).unwrap() == '�' {
+            if arg_utf8.chars().nth(offset).unwrap() == '�' {
                 Err(format!(
                     "Invalid unicode character in {}",
                     String::from_utf16_lossy(&arg)
@@ -180,7 +196,7 @@ impl Lexer {
                 .into())
             } else {
                 Ok(Some(Token::ShortFlag(
-                    arg_utf8.chars().nth(self.cursor).unwrap(),
+                    arg_utf8.chars().nth(offset).unwrap(),
                 )))
             }
         } else {
@@ -207,6 +223,7 @@ impl Lexer {
             let offset = self.cursor;
             self.index += 1;
             self.cursor = 0;
+            dbg!(OsStr::from_bytes(&stripped_arg[offset..]));
             Some(OsStr::from_bytes(&stripped_arg[offset..]).into())
         } else if arg.starts_with(b"-") && self.cursor > 0 {
             let stripped_arg = &arg[1..];
@@ -271,7 +288,7 @@ impl std::fmt::Display for Token<'_> {
                 write!(f, "--{}", *s)
             }
             Token::Value(s) => {
-                write!(f, "{:?}", s)
+                write!(f, "{}", s.to_string_lossy())
             }
         }
     }
